@@ -1,9 +1,15 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
+from typing import Union
 
 
 def pad_3d_array(
-    arr: np.ndarray, patch_size: tuple, strides: tuple, padding: str = "valid"
+    arr: Union[np.ndarray, torch.Tensor],
+    patch_size: tuple,
+    strides: tuple,
+    padding: str = "valid",
+    return_pad: bool = False,
 ) -> np.ndarray:
     """Pad a 3D array to make it compatible with the patch size and strides.
     The padding is performed in a tensorflow-like fashion.
@@ -18,6 +24,7 @@ def pad_3d_array(
             if "same", the array is zero padded so that all the possible patches can be extracted.
             if "valid", the array is not padded and only patches that fully fit in the array are
             extracted. Defaults to "valid".
+        return_pad (bool, optional): Whether to return the padding values. Defaults to False.
 
     Raises:
         ValueError: If the input array is not 3D
@@ -31,6 +38,12 @@ def pad_3d_array(
         >>> arr = pad_3d_array(arr, patch_size=(128, 128, 128), strides=(64, 64, 64), padding="same")
         >>> arr.shape
         (576, 576, 576)
+        >>> tensor = torch.zeros((1, 1, 512, 512, 512))
+        >>> tensor = tensor.squeeze().squeeze()
+        >>> tensor = pad_3d_array(tensor, patch_size=(128, 128, 128), strides=(64, 64, 64), padding="same")
+        >>> tuple(tensor.shape)
+        (576, 576, 576)
+
     """
     if arr.ndim != 3:
         raise ValueError("Input array must be 3D")
@@ -42,7 +55,7 @@ def pad_3d_array(
         strides = (strides, strides, strides)
 
     # I prefer to reason in terms of h, w, d instead of y, x, z
-    d, h, w = arr.shape
+    d, h, w = tuple(arr.shape)
 
     if padding == "same":
         out_depth = np.ceil(d / strides[0]).astype(np.uint8)
@@ -73,14 +86,26 @@ def pad_3d_array(
         pad_left = pad_along_width // 2
         pad_right = pad_along_width - pad_left
 
-        arr = np.pad(
-            arr,
-            pad_width=(
-                (pad_front, pad_back),
-                (pad_top, pad_bottom),
-                (pad_left, pad_right),
-            ),
-        )
+        if isinstance(arr, torch.Tensor):
+            arr = F.pad(
+                arr,
+                pad=(pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back),
+                mode="constant",
+                value=0,
+            )
+        elif isinstance(arr, np.ndarray):
+            arr = np.pad(
+                arr,
+                pad_width=(
+                    (pad_front, pad_back),
+                    (pad_top, pad_bottom),
+                    (pad_left, pad_right),
+                ),
+            )
+        else:
+            raise TypeError(
+                "Input array must be either a numpy.ndarray or a torch.Tensor"
+            )
 
     elif padding == "valid":
         out_depth = np.ceil((d - patch_size[0] + 1) / strides[0]).astype(np.uint8)
@@ -98,11 +123,14 @@ def pad_3d_array(
             "Padding type not implemented. Possible values are: 'same', 'valid'"
         )
 
+    if return_pad:
+        return arr, (pad_front, pad_back, pad_top, pad_bottom, pad_left, pad_right)
+
     return arr
 
 
 def get_patch_coords(
-    arr: np.ndarray, patch_size: tuple, strides: tuple, padding: str = "valid"
+    arr: Union[np.ndarray, torch.Tensor], patch_size: tuple, strides: tuple
 ) -> tuple:
     """Get the coordinates of the patches that can be extracted from an array.
 
@@ -112,10 +140,6 @@ def get_patch_coords(
             dimensions. If a single int is provided, the same value will be used for z, y, and x.
         strides (tuple): Stride dimensions as a tuple of ints representing the z, y, and x
             strides. If a single int is provided, the same value will be used for z, y, and x.
-        padding (str, optional): The type of padding to use. Can be "same" or "valid".
-            if "same", the array is zero padded so that all the possible patches can be extracted.
-            if "valid", the array is not padded and only patches that fully fit in the array are
-            extracted. Defaults to "valid".
 
     Returns:
         (coords_top_corner, coords_bottom_corner): Arrays of shape (n_patches, 3) containing the
@@ -123,16 +147,21 @@ def get_patch_coords(
 
     Example:
         >>> arr = np.zeros((512, 512, 512))
-        >>> coords_top_corner, coords_bottom_corner = get_patch_coords(arr, patch_size=(128, 128, 128), strides=(64, 64, 64), padding="same")
+        >>> arr = pad_3d_array(arr, patch_size=(128, 128, 128), strides=(64, 64, 64), padding="same")
+        >>> coords_top_corner, coords_bottom_corner = get_patch_coords(arr, patch_size=(128, 128, 128), strides=(64, 64, 64))
         >>> coords_top_corner.shape
         (512, 3)
         >>> coords_bottom_corner.shape
         (512, 3)
+        >>> tensor = torch.zeros((1, 1, 512, 512, 512))
+        >>> tensor = tensor.squeeze().squeeze()
+        >>> tensor = pad_3d_array(tensor, patch_size=(128, 128, 128), strides=(64, 64, 64), padding="same")
+        >>> coords_top_corner, coords_bottom_corner = get_patch_coords(tensor, patch_size=(128, 128, 128), strides=(64, 64, 64))
+        >>> coords_top_corner.shape
+        (512, 3)
     """
-    padded = arr.copy()
-    padded = pad_3d_array(padded, patch_size, strides, padding)
 
-    d, h, w = padded.shape
+    d, h, w = arr.shape
 
     n_patches_d = int((d - patch_size[0]) / strides[0]) + 1
     n_patches_h = int((h - patch_size[1]) / strides[1]) + 1
@@ -159,12 +188,13 @@ def get_patch_coords(
 
 
 def predict_array_patches(
-    arr: np.ndarray,
-    model: torch.Module,
+    arr: Union[np.ndarray, torch.Tensor],
+    model: torch.nn.Module,
     patch_size: tuple,
     strides: tuple,
     padding: str = "valid",
     device: str = "cpu",
+    unpad: bool = True,
 ):
     """Predict a volume array by patching it in a sliding window fashion.
 
@@ -185,12 +215,21 @@ def predict_array_patches(
     Returns:
         arr_pred (np.ndarray): The predicted array.
     """
-    device = torch.device(device)
-    model = model.to(device)
+
     model = model.eval()
 
+    arr, pad_values = pad_3d_array(arr, patch_size, strides, padding, return_pad=True)
+
+    if unpad and padding == "valid":
+        Warning(
+            "no padding was used, unpadding will have no effect, setting unpad to False"
+        )
+        unpad = False
+
     coords_top_corner, coords_bottom_corner = get_patch_coords(
-        arr, patch_size, strides, padding
+        arr,
+        patch_size,
+        strides,
     )
 
     n_patches = coords_top_corner.shape[0]
@@ -228,16 +267,20 @@ def predict_array_patches(
 
     arr_pred = arr_pred / mask
 
+    if unpad:
+        pad_front, pad_back, pad_top, pad_bottom, pad_left, pad_right = pad_values
+
+        arr = arr[
+            pad_front:-pad_back,
+            pad_top:-pad_bottom,
+            pad_left:-pad_right,
+        ]
+        return arr_pred
+
     return arr_pred
 
 
 if __name__ == "__main__":
-    test = np.zeros((512, 512, 512))
-    print("original dimension: ", test.shape, "\n")
+    import doctest
 
-    coords_top_corner, coords_bottom_corner = get_patch_coords(
-        test, (128, 128, 128), (64, 64, 64), padding="same"
-    )
-
-    print(coords_top_corner, "\n")
-    print(coords_bottom_corner, "\n")
+    doctest.testmod(verbose=True)
