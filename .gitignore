@@ -6,4 +6,5 @@
 *.pdf
 *.csv
 *.xls
+tests.ipynb
 __pycache__/
