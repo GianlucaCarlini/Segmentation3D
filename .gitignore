@@ -6,5 +6,11 @@
 *.pdf
 *.csv
 *.xls
-tests.ipynb
+*.ipynb
+*.log
+*.yaml
+*.wandb
+*.json
+*.txt
+*.ckpt
 __pycache__/
