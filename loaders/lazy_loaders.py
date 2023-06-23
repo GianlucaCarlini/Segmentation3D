@@ -3,6 +3,7 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import SimpleITK as sitk
 import os
+from typing import Union, Callable
 
 
 class PatchDataloader(Dataset):
@@ -10,10 +11,10 @@ class PatchDataloader(Dataset):
         self,
         images_dir: str,
         labels_dir: str,
-        patch_size: tuple = None,
+        patch_size: Union[tuple, int] = None,
         threshold: float = None,
-        transform=None,
-        preprocessing=None,
+        transform: Callable = None,
+        preprocessing: Callable = None,
     ):
         """Dataset for loading patches from images and labels. It can be used
         for lazy loading of patches from images and labels. It samples a random
@@ -24,9 +25,10 @@ class PatchDataloader(Dataset):
         Args:
             images_dir (str): path to the image directory
             labels_dir (str): path to the label directory
-            patch_size (tuple, optional): Size of the patches to load as a tuple of ints
+            patch_size (tuple | int, optional): Size of the patches to load as a tuple of ints
                 representing the x, y, and z dimension. If a single int is provided,
-                the same value will be used for x, y, and z Defaults to None.
+                the same value will be used for x, y, and z.
+                If less than 0, the whole volume is used. Defaults to None.
             threshold (float, optional): Threshold value to consider for patch sampling.
                 If the sum of non-zero pixels in the sampled patch is lower than
                 threshold, then another patch is sampled until the threshold condition is met
@@ -63,12 +65,14 @@ class PatchDataloader(Dataset):
         self.len = len(self.ids)
 
     def __getitem__(self, index):
-
         file_reader = sitk.ImageFileReader()
         file_reader.SetFileName(self.labels[index])
         file_reader.ReadImageInformation()
 
         x, y, z = file_reader.GetSize()
+
+        if self.patch_size[0] < 0:
+            self.patch_size = (x, y, z)
 
         while True:
             extract_idx_x = np.random.randint(0, max(x - self.patch_size[0], 1))
