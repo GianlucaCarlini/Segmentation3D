@@ -41,13 +41,14 @@ class PatchDataloader(Dataset):
         self.images_dir = images_dir
         self.labels_dir = labels_dir
 
-        self.ids = os.listdir(self.images_dir)
+        self.ids = os.listdir(self.labels_dir)
 
         self.images = [os.path.join(self.images_dir, image_id) for image_id in self.ids]
         self.labels = [os.path.join(self.labels_dir, image_id) for image_id in self.ids]
 
         self.transform = transform
         self.preprocessing = preprocessing
+        self.reader = sitk.ImageFileReader()
 
         if patch_size is not None:
             if isinstance(patch_size, int):
@@ -65,43 +66,50 @@ class PatchDataloader(Dataset):
         self.len = len(self.ids)
 
     def __getitem__(self, index):
-        file_reader = sitk.ImageFileReader()
-        file_reader.SetFileName(self.labels[index])
-        file_reader.ReadImageInformation()
 
-        x, y, z = file_reader.GetSize()
+        self.reader.SetFileName(self.labels[index])
+        self.reader.ReadImageInformation()
+
+        x, y, z = self.reader.GetSize()
 
         if self.patch_size[0] < 0:
-            self.patch_size = (x, y, z)
+            patch_size = (x, y, z)
+        else:
+            patch_size = self.patch_size
 
         while True:
-            extract_idx_x = np.random.randint(0, max(x - self.patch_size[0], 1))
-            extract_idx_y = np.random.randint(0, max(y - self.patch_size[1], 1))
-            extract_idx_z = np.random.randint(0, max(z - self.patch_size[2], 1))
+            extract_idx_x = np.random.randint(0, max(x - patch_size[0], 1))
+            extract_idx_y = np.random.randint(0, max(y - patch_size[1], 1))
+            extract_idx_z = np.random.randint(0, max(z - patch_size[2], 1))
 
-            file_reader.SetExtractIndex((extract_idx_x, extract_idx_y, extract_idx_z))
-            file_reader.SetExtractSize(
-                (self.patch_size[0], self.patch_size[1], self.patch_size[2])
+            self.reader.SetExtractIndex((extract_idx_x, extract_idx_y, extract_idx_z))
+            self.reader.SetExtractSize(
+                (patch_size[0], patch_size[1], patch_size[2])
             )
 
-            label = file_reader.Execute()
+            label = self.reader.Execute()
             label = sitk.GetArrayFromImage(label)
 
             if np.sum(label > 0.0) > self.threshold * (
-                self.patch_size[0] * self.patch_size[1] * self.patch_size[2]
+                patch_size[0] * patch_size[1] * patch_size[2]
             ):
                 break
 
-        file_reader.SetFileName(self.images[index])
+        self.reader.SetFileName(self.images[index])
 
-        image = file_reader.Execute()
+        image = self.reader.Execute()
         image = sitk.GetArrayFromImage(image)
+
+        image = np.expand_dims(image, axis=0)
 
         if self.preprocessing:
             image = self.preprocessing(image)
 
         if self.transform:
             image, label = self.transform(image, label)
+
+        image = torch.from_numpy(image).float()
+        label = torch.from_numpy(label).float()
 
         return image, label
 
