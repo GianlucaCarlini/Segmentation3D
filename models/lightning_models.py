@@ -54,7 +54,7 @@ class Unet3D(pl.LightningModule):
 
         loss = self.loss(y, y_pred)
 
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -68,10 +68,11 @@ class Unet3D(pl.LightningModule):
             unpad=True,
             verbose=False,
         )
+        volume_pred = volume_pred.unsqueeze(0)
 
         loss = self.loss(y, volume_pred)
 
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, prog_bar=True, logger=True)
 
     def predict_step(self, volume: torch.Tensor, **kwargs) -> torch.Tensor:
         """Prediction step of the model.
@@ -86,3 +87,7 @@ class Unet3D(pl.LightningModule):
         volume = volume.squeeze().squeeze()
 
         return predict_tensor_patches(tensor=volume, model=self.model, **kwargs)
+    
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+        return optimizer
