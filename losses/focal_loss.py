@@ -33,9 +33,11 @@ class FocalLoss(nn.Module):
         self.reduce = reduce
         self.num_clasees = num_clasees
 
-    def forward(self, inputs, targets):
+    def forward(self, targets, inputs):
 
         targets = F.one_hot(targets.long(), num_classes=self.num_clasees).float()
+
+        inputs = torch.permute(inputs, (0, 2, 3, 4, 1))
 
         if self.from_logits:
             probs = F.softmax(inputs, dim=-1)
