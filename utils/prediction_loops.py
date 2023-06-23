@@ -36,6 +36,7 @@ def predict_tensor_patches(
     """
 
     model = model.eval()
+    classes = model.classes
 
     tensor, pad_values = pad_3d_array(
         tensor, patch_size, strides, padding, return_pad=True
@@ -55,8 +56,8 @@ def predict_tensor_patches(
 
     n_patches = coords_top_corner.shape[0]
 
-    tensor_pred = torch.zeros(tensor.shape).to(tensor)
-    mask = torch.zeros(tensor.shape).to(tensor)
+    tensor_pred = torch.zeros(size=(classes, *tensor.shape)).to(tensor)
+    mask = torch.zeros(size=(classes, *tensor.shape)).to(tensor)
 
     n = 0
     tic = time()
@@ -73,15 +74,15 @@ def predict_tensor_patches(
 
         patch = patch.unsqueeze(0).unsqueeze(0)
         patch_pred = model(patch)
-        patch_pred = patch_pred.squeeze(0).squeeze(0)
+        patch_pred = patch_pred.squeeze(0)
 
-        tensor_pred[
+        tensor_pred[:,
             top_corner[0] : bottom_corner[0],
             top_corner[1] : bottom_corner[1],
             top_corner[2] : bottom_corner[2],
         ] += patch_pred
 
-        mask[
+        mask[:, 
             top_corner[0] : bottom_corner[0],
             top_corner[1] : bottom_corner[1],
             top_corner[2] : bottom_corner[2],
@@ -100,7 +101,7 @@ def predict_tensor_patches(
     if unpad:
         pad_front, pad_back, pad_top, pad_bottom, pad_left, pad_right = pad_values
 
-        tensor_pred = tensor_pred[
+        tensor_pred = tensor_pred[:, 
             pad_front:-pad_back,
             pad_top:-pad_bottom,
             pad_left:-pad_right,
