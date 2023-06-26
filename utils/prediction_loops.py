@@ -72,6 +72,18 @@ def predict_tensor_patches(
             top_corner[2] : bottom_corner[2],
         ]
 
+        mask[:, 
+            top_corner[0] : bottom_corner[0],
+            top_corner[1] : bottom_corner[1],
+            top_corner[2] : bottom_corner[2],
+        ] += 1
+
+        if torch.eq(torch.count_nonzero(patch), torch.tensor(0).to(tensor)):
+            n += 1
+            if verbose:
+                print(f"predicted {n}/{n_patches} patches \r", end="", flush=True)
+            continue
+
         patch = patch.unsqueeze(0).unsqueeze(0)
         patch_pred = model(patch)
         patch_pred = patch_pred.squeeze(0)
@@ -82,11 +94,6 @@ def predict_tensor_patches(
             top_corner[2] : bottom_corner[2],
         ] += patch_pred
 
-        mask[:, 
-            top_corner[0] : bottom_corner[0],
-            top_corner[1] : bottom_corner[1],
-            top_corner[2] : bottom_corner[2],
-        ] += 1
 
         if verbose:
             n += 1
