@@ -123,7 +123,7 @@ def pad_3d_array(
             "Padding type not implemented. Possible values are: 'same', 'valid'"
         )
 
-    if return_pad:
+    if return_pad and padding == "same":
         return arr, (pad_front, pad_back, pad_top, pad_bottom, pad_left, pad_right)
 
     return arr
