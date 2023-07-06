@@ -66,8 +66,10 @@ class Unet3D(pl.LightningModule):
         self.training_steps = kwargs.get("training_steps", 1000)
         self.initial_lr = kwargs.get("initial_lr", 1e-3)
         self.patch_size = kwargs.get("patch_size", (128, 128, 128))
-        self.strides = kwargs.get("stride", (64, 64, 64))
+        self.strides = kwargs.get("strides", (64, 64, 64))
         self.padding = kwargs.get("padding", "same")
+
+        self.beta = kwargs.get("beta", 100)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
@@ -78,7 +80,7 @@ class Unet3D(pl.LightningModule):
 
         B = y.size(dim=0)
 
-        loss = self.loss(y, y_pred)
+        loss = self.loss(y, y_pred) * self.beta
 
         self.log(
             "train_loss", loss, prog_bar=True, logger=True, on_step=True, on_epoch=True
@@ -105,7 +107,7 @@ class Unet3D(pl.LightningModule):
         )
         volume_pred = volume_pred.unsqueeze(0)
 
-        loss = self.loss(y, volume_pred)
+        loss = self.loss(y, volume_pred) * self.beta
 
         self.log("val_loss", loss, prog_bar=True, logger=True)
 
