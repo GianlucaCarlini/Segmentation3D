@@ -13,4 +13,5 @@
 *.json
 *.txt
 *.ckpt
+*.nii.gz
 __pycache__/

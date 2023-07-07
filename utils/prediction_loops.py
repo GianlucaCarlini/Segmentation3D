@@ -35,7 +35,7 @@ def predict_tensor_patches(
         tensor_pred (torch.Tensor): The predicted tensor.
     """
 
-    model = model.eval()
+    model.eval()
     classes = model.classes
 
     tensor, pad_values = pad_3d_array(
