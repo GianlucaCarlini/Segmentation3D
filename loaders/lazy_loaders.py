@@ -5,6 +5,56 @@ import SimpleITK as sitk
 import os
 from typing import Union, Callable
 
+__all__ = ["PatchDataloader"]
+
+
+def gaussian_sampling(volume_size, patch_size, std_factor=8):
+    if patch_size[0] < 0:
+        return 0, 0, 0
+
+    x, y, z = volume_size
+
+    x_offset = patch_size[0] / 2
+    y_offset = patch_size[1] / 2
+    z_offset = patch_size[2] / 2
+
+    center_x = x / 2 - x_offset
+    center_y = y / 2 - y_offset
+    center_z = z / 2 - z_offset
+
+    std_x = x / std_factor
+    std_y = y / std_factor
+    std_z = z / std_factor
+
+    extract_idx_x = np.random.normal(loc=center_x, scale=std_x)
+    extract_idx_y = np.random.normal(loc=center_y, scale=std_y)
+    extract_idx_z = np.random.normal(loc=center_z, scale=std_z)
+
+    extract_idx_x = int(np.clip(extract_idx_x, 0, x - patch_size[0]))
+    extract_idx_y = int(np.clip(extract_idx_y, 0, y - patch_size[1]))
+    extract_idx_z = int(np.clip(extract_idx_z, 0, z - patch_size[2]))
+
+    return extract_idx_x, extract_idx_y, extract_idx_z
+
+
+def uniform_sampling(volume_size, patch_size):
+    if patch_size[0] < 0:
+        return 0, 0, 0
+
+    x, y, z = volume_size
+
+    if patch_size is None:
+        patch_size = (0, 0, 0)
+
+    extract_idx_x = np.random.randint(0, max(x - patch_size[0], 1))
+    extract_idx_y = np.random.randint(0, max(y - patch_size[1], 1))
+    extract_idx_z = np.random.randint(0, max(z - patch_size[2], 1))
+
+    return extract_idx_x, extract_idx_y, extract_idx_z
+
+
+sampling_functions = {"uniform": uniform_sampling, "gaussian": gaussian_sampling}
+
 
 class PatchDataloader(Dataset):
     def __init__(
@@ -12,9 +62,11 @@ class PatchDataloader(Dataset):
         images_dir: str,
         labels_dir: str,
         patch_size: Union[tuple, int] = None,
+        sampling_method: str = "uniform",
         threshold: float = None,
         transform: Callable = None,
         preprocessing: Callable = None,
+        **kwargs,
     ):
         """Dataset for loading patches from images and labels. It can be used
         for lazy loading of patches from images and labels. It samples a random
@@ -29,6 +81,8 @@ class PatchDataloader(Dataset):
                 representing the x, y, and z dimension. If a single int is provided,
                 the same value will be used for x, y, and z.
                 If less than 0, the whole volume is used. Defaults to None.
+            sampling_method (str, optional): Sampling method to use. Can be either
+                "uniform" or "gaussian". Defaults to "uniform".
             threshold (float, optional): Threshold value to consider for patch sampling.
                 If the sum of non-zero pixels in the sampled patch is lower than
                 threshold, then another patch is sampled until the threshold condition is met
@@ -50,6 +104,15 @@ class PatchDataloader(Dataset):
         self.preprocessing = preprocessing
         self.reader = sitk.ImageFileReader()
 
+        self.sampling_method = sampling_method
+
+        self.sampling_function = sampling_functions.get(self.sampling_method, None)
+
+        if self.sampling_function is None:
+            raise NotImplementedError(
+                f"Sampling method {self.sampling_method} not implemented, available methods are: {sampling_functions.keys()}"
+            )
+
         if patch_size is not None:
             if isinstance(patch_size, int):
                 self.patch_size = (patch_size, patch_size, patch_size)
@@ -65,27 +128,29 @@ class PatchDataloader(Dataset):
 
         self.len = len(self.ids)
 
-    def __getitem__(self, index):
+        self.kwargs = kwargs
 
+    def __getitem__(self, index):
         self.reader.SetFileName(self.labels[index])
         self.reader.ReadImageInformation()
 
         x, y, z = self.reader.GetSize()
 
-        if self.patch_size[0] < 0:
-            patch_size = (x, y, z)
-        else:
-            patch_size = self.patch_size
+        patch_size = self.patch_size
 
         while True:
-            extract_idx_x = np.random.randint(0, max(x - patch_size[0], 1))
-            extract_idx_y = np.random.randint(0, max(y - patch_size[1], 1))
-            extract_idx_z = np.random.randint(0, max(z - patch_size[2], 1))
-
-            self.reader.SetExtractIndex((extract_idx_x, extract_idx_y, extract_idx_z))
-            self.reader.SetExtractSize(
-                (patch_size[0], patch_size[1], patch_size[2])
+            (
+                self.extract_idx_x,
+                self.extract_idx_y,
+                self.extract_idx_z,
+            ) = self.sampling_function(
+                volume_size=(x, y, z), patch_size=patch_size, **self.kwargs
             )
+
+            self.reader.SetExtractIndex(
+                (self.extract_idx_x, self.extract_idx_y, self.extract_idx_z)
+            )
+            self.reader.SetExtractSize((patch_size[0], patch_size[1], patch_size[2]))
 
             label = self.reader.Execute()
             label = sitk.GetArrayFromImage(label)
