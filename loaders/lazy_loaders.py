@@ -91,6 +91,8 @@ class PatchDataloader(Dataset):
         threshold: float = None,
         transform: Callable = None,
         preprocessing: Callable = None,
+        positional: bool = False,
+        repeat: int = 1,
         **kwargs,
     ):
         self.images_dir = images_dir
@@ -98,11 +100,16 @@ class PatchDataloader(Dataset):
 
         self.ids = os.listdir(self.labels_dir)
 
+        if repeat > 1:
+            self.ids = self.ids * repeat
+
         self.images = [os.path.join(self.images_dir, image_id) for image_id in self.ids]
         self.labels = [os.path.join(self.labels_dir, image_id) for image_id in self.ids]
 
         self.transform = transform
         self.preprocessing = preprocessing
+        self.positional = positional
+
         self.reader = sitk.ImageFileReader()
 
         self.sampling_method = sampling_method
@@ -182,6 +189,12 @@ class PatchDataloader(Dataset):
         image = torch.from_numpy(image).float()
         label = torch.from_numpy(label).float()
 
+        if self.positional:
+            rel_idx = self.get_relative_index()
+            rel_idx = torch.from_numpy(np.array(rel_idx)).float()
+
+            return image, label, rel_idx
+
         return image, label
 
     def __len__(self):
@@ -192,4 +205,4 @@ class PatchDataloader(Dataset):
         rel_y = self.extract_idx_y / self.y
         rel_z = self.extract_idx_z / self.z
 
-        return [[rel_x], [rel_y], [rel_z]]
+        return [[rel_z], [rel_y], [rel_x]]
