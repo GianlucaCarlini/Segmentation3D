@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 __all__ = ["ResidualBlock", "ResidualLayer", "Upsample", "Downsample"]
 
@@ -217,5 +218,39 @@ class Downsample(nn.Module):
 
     def forward(self, x):
         x = self.conv(x)
+
+        return x
+
+
+class SinusoidalEmbedding(torch.nn.Module):
+    def __init__(
+        self,
+        embed_dim,
+        embedding_max_frequency=1.0,
+        embedding_min_frequency=0.0,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+
+        self.embed_dim = embed_dim
+        self.embedding_max_frequency = torch.tensor(embedding_max_frequency)
+        self.embedding_min_frequency = torch.tensor(embedding_min_frequency)
+
+        self.frequencies = torch.linspace(
+            self.embedding_min_frequency,
+            self.embedding_max_frequency,
+            int(self.embed_dim // 2),
+        )
+
+        self.angular_speeds = (
+            (2.0 * np.pi * self.frequencies).detach().requires_grad_(False)
+        )
+
+    def forward(self, x):
+        self.angular_speeds = self.angular_speeds.to(x.device)
+        x = torch.cat(
+            [torch.sin(self.angular_speeds * x), torch.cos(self.angular_speeds * x)],
+            axis=-1,
+        )
 
         return x
