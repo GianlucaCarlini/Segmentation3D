@@ -1,9 +1,22 @@
 import torch
 import torch.nn as nn
-from .blocks import ResidualLayer, Upsample, Downsample
+from .blocks import ResidualLayer, Upsample, Downsample, SinusoidalEmbedding
 
 
 class Unet(nn.Module):
+    """Instantiates a Unet model with Residual blocks.
+
+    Args:
+        in_channels (int): The number of input channels of the model.
+        depths (list): The number of Residual blocks in each layer of the model.
+        embed_dim (int, optional): The initial embedding dimension. Defaults to 48.
+        channel_multipliers (list, optional): The channel multiplier for each layer of the model.
+            The layer will have embed_dim * channel_multiplier[i] filters. Defaults to [1, 2, 4, 8, 16].
+        classes (int, optional): The number of output classes of the model head. Defaults to 1.
+        final_activation (torch.nn.Module(), optional): The final activation function of the model.
+            Defaults to nn.Identity().
+    """
+
     def __init__(
         self,
         in_channels,
@@ -15,19 +28,6 @@ class Unet(nn.Module):
         *args,
         **kwargs
     ) -> None:
-        """Instantiates a Unet model with Magneto blocks.
-
-        Args:
-            in_channels (int): The number of input channels of the model.
-            depths (list): The number of Magneto blocks in each layer of the model.
-            embed_dim (int, optional): The initial embedding dimension. Defaults to 48.
-            channel_multipliers (list, optional): The channel multiplier for each layer of the model.
-                The layer will have embed_dim * channel_multiplier[i] filters. Defaults to [1, 2, 4, 8, 16].
-            classes (int, optional): The number of output classes of the model head. Defaults to 1.
-            final_activation (torch.nn.Module(), optional): The final activation function of the model.
-                Defaults to nn.Identity().
-        """
-
         super().__init__(*args, **kwargs)
 
         self.in_channels = in_channels
@@ -141,6 +141,83 @@ class Unet(nn.Module):
             if i < len(self.down_blocks) - 1:
                 down_outputs.append(x)
                 x = downsample(x)
+
+        for i, (upsample, proj, block) in enumerate(self.up_blocks):
+            x = upsample(x)
+            x = torch.cat([x, down_outputs[-(i + 1)]], dim=1)
+            x = proj(x)
+            x = block(x)
+
+        x = self.head(x)
+        x = self.final_activation(x)
+
+        return x
+
+
+class PositionalUnet(Unet):
+    def __init__(
+        self,
+        in_channels,
+        positional_channels,
+        depths=[2, 2, 2, 2, 2],
+        embed_dim=48,
+        channel_multipliers=[1, 2, 4, 8, 16],
+        classes=1,
+        final_activation=nn.Identity(),
+        positional_embed_dim=32,
+        *args,
+        **kwargs
+    ) -> None:
+        super().__init__(
+            in_channels,
+            depths,
+            embed_dim,
+            channel_multipliers,
+            classes,
+            final_activation,
+            *args,
+            **kwargs
+        )
+
+        self.positional_embed_dim = positional_embed_dim
+        self.positional_channels = positional_channels
+        self.sinusosomal_embedding = SinusoidalEmbedding(self.positional_embed_dim)
+
+        self.positional_proj = nn.Conv3d(
+            in_channels=int(
+                self.embed_dim * self.channel_multipliers[0]
+                + self.positional_embed_dim * self.positional_channels
+            ),
+            out_channels=embed_dim * channel_multipliers[0],
+            kernel_size=1,
+            stride=1,
+            padding=0,
+        )
+
+    def forward(self, x, pos):
+        x = self.stem_conv(x)
+
+        pos = self.sinusosomal_embedding(pos)
+
+        down_outputs = []
+
+        down_outputs.append(x)
+
+        for i, (block, downsample) in enumerate(self.down_blocks):
+            x = block(x)
+
+            if i < len(self.down_blocks) - 1:
+                down_outputs.append(x)
+                x = downsample(x)
+
+        B, C, D, H, W = x.size()
+
+        pos = pos.reshape(B, -1)
+        pos = pos.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+        pos = nn.Upsample(size=(D, H, W), mode="nearest")(pos)
+
+        x = torch.cat([x, pos], dim=1)
+        x = self.positional_proj(x)
 
         for i, (upsample, proj, block) in enumerate(self.up_blocks):
             x = upsample(x)
