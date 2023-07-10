@@ -13,6 +13,7 @@ class Unet3D(pl.LightningModule):
         metrics: Callable=None,
         optimizer: torch.optim.Optimizer = None,
         lr_scheduler: torch.optim.lr_scheduler._LRScheduler = None,
+        positional: bool = False,
         *args: Any,
         **kwargs: Any
     ) -> None:
@@ -36,15 +37,30 @@ class Unet3D(pl.LightningModule):
         self.channel_multipliers = kwargs.get("channel_multipliers", [1, 2, 4, 8])
         self.classes = kwargs.get("classes", 1)
         self.final_activation = kwargs.get("final_activation", torch.nn.Identity())
+        self.positional = positional
 
-        self.model = model(
-            in_channels=self.in_channels,
-            depths=self.depths,
-            embed_dim=self.embed_dim,
-            channel_multipliers=self.channel_multipliers,
-            classes=self.classes,
-            final_activation=self.final_activation,
-        )
+        if self.positional:
+            self.positional_embed_dim = kwargs.get("positional_embed_dim", 32)
+            self.positional_channels = kwargs.get("positional_channels", 3)
+            self.model = model(
+                in_channels=self.in_channels,
+                depths=self.depths,
+                embed_dim=self.embed_dim,
+                channel_multipliers=self.channel_multipliers,
+                classes=self.classes,
+                final_activation=self.final_activation,
+                positional_embed_dim=self.positional_embed_dim,
+                positional_channels=self.positional_channels,)
+
+        else:    
+            self.model = model(
+                in_channels=self.in_channels,
+                depths=self.depths,
+                embed_dim=self.embed_dim,
+                channel_multipliers=self.channel_multipliers,
+                classes=self.classes,
+                final_activation=self.final_activation,
+            )
 
         self.loss = loss
 
@@ -72,11 +88,19 @@ class Unet3D(pl.LightningModule):
         self.beta = kwargs.get("beta", 100)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.positional:
+            x, pos = x
+            return self.model(x, pos)
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
-        x, y = batch
-        y_pred = self(x)
+
+        if self.positional:
+            x, y, pos = batch
+            y_pred = self((x, pos))
+        else:
+            x, y = batch
+            y_pred = self(x)
 
         B = y.size(dim=0)
 
@@ -104,6 +128,7 @@ class Unet3D(pl.LightningModule):
             padding=self.padding,
             unpad=True,
             verbose=False,
+            positional=self.positional,
         )
         volume_pred = volume_pred.unsqueeze(0)
 
