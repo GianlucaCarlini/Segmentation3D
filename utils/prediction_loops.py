@@ -13,6 +13,7 @@ def predict_tensor_patches(
     padding: str = "valid",
     unpad: bool = False,
     verbose: bool = False,
+    positional: bool = False,
 ):
     """Predict a volume array by patching it in a sliding window fashion.
 
@@ -54,6 +55,9 @@ def predict_tensor_patches(
         strides,
     )
 
+    if positional:
+        z, y, x = tensor.shape
+
     n_patches = coords_top_corner.shape[0]
 
     tensor_pred = torch.zeros(size=(classes, *tensor.shape)).to(tensor)
@@ -86,7 +90,13 @@ def predict_tensor_patches(
         #     continue
 
         patch = patch.unsqueeze(0).unsqueeze(0)
-        patch_pred = model(patch)
+
+        if positional:
+            pos = torch.tensor([[top_corner[0] / z], [top_corner[1] / y], [top_corner[2] / x]]).to(tensor)
+            patch_pred = model(patch, pos)
+        else:
+            patch_pred = model(patch)
+
         patch_pred = patch_pred.squeeze(0)
 
         tensor_pred[
