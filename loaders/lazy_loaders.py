@@ -57,6 +57,31 @@ sampling_functions = {"uniform": uniform_sampling, "gaussian": gaussian_sampling
 
 
 class PatchDataloader(Dataset):
+    """Dataset for loading patches from images and labels. It can be used
+    for lazy loading of patches from images and labels. It samples a random
+    index from the image and label and extracts a patch of the specified
+    size. If the number of non-zero voxels in the label is less than the
+    threshold, it will sample another index until the threshold is met.
+
+    Args:
+        images_dir (str): path to the image directory
+        labels_dir (str): path to the label directory
+        patch_size (tuple | int, optional): Size of the patches to load as a tuple of ints
+            representing the x, y, and z dimension. If a single int is provided,
+            the same value will be used for x, y, and z.
+            If less than 0, the whole volume is used. Defaults to None.
+        sampling_method (str, optional): Sampling method to use. Can be either
+            "uniform" or "gaussian". Defaults to "uniform".
+        threshold (float, optional): Threshold value to consider for patch sampling.
+            If the sum of non-zero pixels in the sampled patch is lower than
+            threshold, then another patch is sampled until the threshold condition is met
+            Defaults to None.
+        transform (callable, optional): Optional transform to apply to the image and label.
+            The same transform is applied to both. Defaults to None.
+        preprocessing (callable, optional): Optional preprocessing to apply to the image.
+            Defaults to None.
+    """
+
     def __init__(
         self,
         images_dir: str,
@@ -68,30 +93,6 @@ class PatchDataloader(Dataset):
         preprocessing: Callable = None,
         **kwargs,
     ):
-        """Dataset for loading patches from images and labels. It can be used
-        for lazy loading of patches from images and labels. It samples a random
-        index from the image and label and extracts a patch of the specified
-        size. If the number of non-zero voxels in the label is less than the
-        threshold, it will sample another index until the threshold is met.
-
-        Args:
-            images_dir (str): path to the image directory
-            labels_dir (str): path to the label directory
-            patch_size (tuple | int, optional): Size of the patches to load as a tuple of ints
-                representing the x, y, and z dimension. If a single int is provided,
-                the same value will be used for x, y, and z.
-                If less than 0, the whole volume is used. Defaults to None.
-            sampling_method (str, optional): Sampling method to use. Can be either
-                "uniform" or "gaussian". Defaults to "uniform".
-            threshold (float, optional): Threshold value to consider for patch sampling.
-                If the sum of non-zero pixels in the sampled patch is lower than
-                threshold, then another patch is sampled until the threshold condition is met
-                Defaults to None.
-            transform (callable, optional): Optional transform to apply to the image and label.
-                The same transform is applied to both. Defaults to None.
-            preprocessing (callable, optional): Optional preprocessing to apply to the image.
-                Defaults to None.
-        """
         self.images_dir = images_dir
         self.labels_dir = labels_dir
 
@@ -134,9 +135,12 @@ class PatchDataloader(Dataset):
         self.reader.SetFileName(self.labels[index])
         self.reader.ReadImageInformation()
 
-        x, y, z = self.reader.GetSize()
+        self.x, self.y, self.z = self.reader.GetSize()
 
-        patch_size = self.patch_size
+        if self.patch_size[0] < 0:
+            patch_size = (self.x, self.y, self.z)
+        else:
+            patch_size = self.patch_size
 
         while True:
             (
@@ -144,7 +148,9 @@ class PatchDataloader(Dataset):
                 self.extract_idx_y,
                 self.extract_idx_z,
             ) = self.sampling_function(
-                volume_size=(x, y, z), patch_size=patch_size, **self.kwargs
+                volume_size=(self.x, self.y, self.z),
+                patch_size=patch_size,
+                **self.kwargs,
             )
 
             self.reader.SetExtractIndex(
@@ -180,3 +186,10 @@ class PatchDataloader(Dataset):
 
     def __len__(self):
         return self.len
+
+    def get_relative_index(self):
+        rel_x = self.extract_idx_x / self.x
+        rel_y = self.extract_idx_y / self.y
+        rel_z = self.extract_idx_z / self.z
+
+        return [[rel_x], [rel_y], [rel_z]]
