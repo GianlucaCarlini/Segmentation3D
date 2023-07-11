@@ -55,8 +55,8 @@ def predict_tensor_patches(
         strides,
     )
 
-    if positional:
-        z, y, x = tensor.shape
+
+    z, y, x = tensor.shape
 
     n_patches = coords_top_corner.shape[0]
 
@@ -121,9 +121,9 @@ def predict_tensor_patches(
 
         tensor_pred = tensor_pred[
             :,
-            pad_front:-pad_back,
-            pad_top:-pad_bottom,
-            pad_left:-pad_right,
+            pad_front:(z-pad_back),
+            pad_top:(y-pad_bottom),
+            pad_left:(x-pad_right),
         ]
         return tensor_pred
 
