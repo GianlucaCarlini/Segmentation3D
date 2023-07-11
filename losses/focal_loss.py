@@ -3,35 +3,38 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class FocalLoss(nn.Module):
+    """Focal Loss for multi-class classification
 
-    def __init__(self, gamma: int=2, num_clasees: int=2, from_logits: bool=True, reduce: bool=True):
-        """Focal Loss for multi-class classification
-
-        Args:
-            gamma (int, optional): Focal parameter. Defaults to 2.
-            num_clasees (int, optional): Number of classes. Defaults to 2.
-            from_logits (bool, optional): Wheter if the predicted tensor is a logits tensor
-                (True) or a probability distribution (False). Defaults to False.
-            reduce (bool, optional): Wheter if compute the mean of the final tensor
-                or not. Defaults to True.
+    Parameters
+    ----------
+    gamma : str, optional
+        Focal parameter, by default 2
+    num_classes : int, optional
+        Number of classes, by default 2
+    from_logits : bool, optional
+        Wheter if the predicted tensor is a logits tensor (True) or a probability distribution (False), by default True
+    reduce : bool, optional
+        Wheter if compute the mean of the final tensor or not, by default True
         
-        Example:
-            >>> import torch
-            >>> import torch.nn as nn
-            >>> import torch.nn.functional as F
-            >>> target = torch.rand((1, 128, 128, 128, 7))
-            >>> target = torch.argmax(target, dim=-1)
-            >>> input = torch.rand((1, 128, 128, 128, 7))
-            >>> input = F.softmax(input, dim=-1)
-            >>> loss = FocalLoss(num_clasees=7)
-            >>> res = loss(input, target)
-        """
+    Example
+    -------
+        >>> import torch
+        >>> import torch.nn as nn
+        >>> import torch.nn.functional as F
+        >>> target = torch.rand((1, 128, 128, 128, 7))
+        >>> target = torch.argmax(target, dim=-1)
+        >>> input = torch.rand((1, 128, 128, 128, 7))
+        >>> input = F.softmax(input, dim=-1)
+        >>> loss = FocalLoss(num_clasees=7)
+        >>> res = loss(input, target)
+    """
+    def __init__(self, gamma: int=2, num_classes: int=2, from_logits: bool=True, reduce: bool=True):
         
         super(FocalLoss, self).__init__()
         self.gamma = gamma
         self.from_logits = from_logits
         self.reduce = reduce
-        self.num_clasees = num_clasees
+        self.num_clasees = num_classes
 
     def forward(self, targets, inputs):
 
