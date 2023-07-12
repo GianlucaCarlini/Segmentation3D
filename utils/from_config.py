@@ -12,7 +12,7 @@ def get_module_from_string(module_string: str) -> Callable:
 
     Returns
     -------
-    Callable
+    module : Callable
         The module
     """
     module, class_name = module_string.rsplit(".", 1)
@@ -37,7 +37,7 @@ def init_from_config(
 
     Returns
     -------
-    Callable
+    object : Callable
         The initialized object
     """
     new_config = {}
