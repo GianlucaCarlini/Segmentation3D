@@ -91,7 +91,7 @@ def pad_3d_array(
                 arr,
                 pad=(pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back),
                 mode="constant",
-                value=0,
+                value=arr.min(),
             )
         elif isinstance(arr, np.ndarray):
             arr = np.pad(
@@ -101,6 +101,8 @@ def pad_3d_array(
                     (pad_top, pad_bottom),
                     (pad_left, pad_right),
                 ),
+                mode="constant",
+                constant_values=arr.min(),
             )
         else:
             raise TypeError(
