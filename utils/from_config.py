@@ -1,5 +1,6 @@
 import importlib
-from typing import Callable
+from typing import Callable, Union
+import warnings
 
 
 def get_module_from_string(module_string: str) -> Callable:
@@ -21,26 +22,39 @@ def get_module_from_string(module_string: str) -> Callable:
 
 
 def init_from_config(
-    object: Callable, config: dict, additional_params: dict = None
-) -> Callable:
+    config: dict,
+    object: Callable = None,
+    additional_params: dict = None,
+    return_config_only: bool = False,
+) -> Union[Callable, dict]:
     """instantiates an object from a config dictionary
 
     Parameters
     ----------
-    object : Callable
-        Object to be instantiated
     config : dict
         Configuration dictionary to be used for instantiation
+    object : Callable, optional
+        Object to be instantiated
     additional_params : dict, optional
         Additional parameters to use that where not present in the config file,
         by default None
+    return_config_only : bool, optional
+        Wheter if return the config dictionary or the instantiated object, by default False
 
     Returns
     -------
     object : Callable
-        The initialized object
+        The initialized object, only if return_config_only is False
+    config : dict
+        The configuration dictionary, only if return_config_only is True
     """
     new_config = {}
+
+    if object is None and return_config_only is False:
+        warnings.warn(
+            "No object was provided and return_config_only is False, setting return_config_only to True"
+        )
+        return_config_only = True
 
     for key, value in config.items():
         if value.get("target") is not None:
@@ -62,6 +76,9 @@ def init_from_config(
 
     if additional_params is not None:
         new_config.update(additional_params)
+
+    if return_config_only:
+        return new_config
 
     object = object(**new_config)
 
