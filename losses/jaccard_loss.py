@@ -15,23 +15,25 @@ class JaccardLoss(torch.nn.Module):
         if self.from_logits:
             inputs = torch.nn.Softmax(dim=1)(inputs)
 
-        target_one_hot = F.one_hot(targets.long(), num_classes=self.num_classes).float()
-        target_one_hot = torch.permute(target_one_hot, (0, 4, 1, 2, 3))
+        B = inputs.shape[0]
+        
+        targets_one_hot = F.one_hot(targets.long(), num_classes=self.num_classes).float()
+        targets_one_hot = torch.permute(targets_one_hot, (0, 4, 1, 2, 3))
 
-        intersection = targets * inputs
+        intersection = targets_one_hot * inputs
 
         # Reduce the last 3 dimension -> intersection shape = [batch_size, num_classes]
-        intersection_flat = intersection.sum(dim=(2, 3, 4))
+        intersection_flat = intersection.view(B, self.num_classes, -1).sum(dim=2)
 
-        union = inputs + target_one_hot - intersection
+        union = inputs + targets_one_hot - intersection
 
         # Reduce the last 3 dimension -> union shape = [batch_size, num_classes]
-        union_flat = union.sum(dim=(2, 3, 4))
+        union_flat = union.view(B, self.num_classes, -1).sum(dim=2)
 
         jaccard = (intersection_flat + self.smooth) / (union_flat + self.smooth)
 
         if self.reduce:
-            return torch.mean(1 - jaccard)
-        else:
-            return 1 - jaccard
+            jaccard = torch.mean(jaccard)
+        
+        return 1 - jaccard
         
