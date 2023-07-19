@@ -15,5 +15,4 @@
 *.ckpt
 *.nii.gz
 __pycache__/
-model_train.py
-predict_images.py
+/*.py
