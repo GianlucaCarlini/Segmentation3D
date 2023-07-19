@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 from utils.prediction_loops import predict_tensor_patches
 import numpy as np
 from typing import Union, Any, Optional, Callable
-
+import torchio as tio
 
 class Unet3D(pl.LightningModule):
     def __init__(
@@ -102,7 +102,8 @@ class Unet3D(pl.LightningModule):
             x, y = batch
             y_pred = self(x)
 
-        B = y.size(dim=0)
+        if y.dim() > 4:
+            y = y.squeeze(1)
 
         loss = self.loss(y, y_pred) * self.beta
 
@@ -131,6 +132,9 @@ class Unet3D(pl.LightningModule):
             positional=self.positional,
         )
         volume_pred = volume_pred.unsqueeze(0)
+
+        if y.dim() > 4:
+            y = y.squeeze(1)
 
         loss = self.loss(y, volume_pred) * self.beta
 
@@ -165,3 +169,58 @@ class Unet3D(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {"scheduler": scheduler, "interval": "step"},
         }
+
+
+class UnetIO(Unet3D):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    def prepare_batch(self, batch):
+        return batch['image'][tio.DATA].float(), batch['label'][tio.DATA].float()
+    
+    def training_step(self, batch, batch_idx):
+
+        x, y = self.prepare_batch(batch)
+
+        if y.dim() > 4:
+            y = y.squeeze(1)
+
+        y_pred = self(x)
+
+        loss = self.loss(y, y_pred) * self.beta
+
+        self.log('train_loss', loss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+
+        if self.metrics is not None:
+            for name, metric in self.metrics.items():
+                metric = metric.to(y)
+                self.log(f'train_{name}', metric(y_pred, y), prog_bar=True, on_step=True, logger=True, on_epoch=True)
+
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+
+        x, y = self.prepare_batch(batch)
+
+        if y.dim() > 4:
+            y = y.squeeze(1)
+
+        y_pred = self.predict_step(volume=x,
+            patch_size=self.patch_size,
+            strides=self.strides,
+            padding=self.padding,
+            unpad=True,
+            verbose=False,
+            positional=self.positional,)
+        
+        y_pred = y_pred.unsqueeze(0)
+
+        loss = self.loss(y, y_pred) * self.beta
+
+        self.log('val_loss', loss, prog_bar=True, logger=True)
+
+        if self.metrics is not None:
+            for name, metric in self.metrics.items():
+                metric = metric.to(y)
+                self.log(f'val_{name}', metric(y_pred, y), prog_bar=True, logger=True)
